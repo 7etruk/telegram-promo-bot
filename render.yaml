@@ -1,4 +1,4 @@
-﻿services:
+services:
   - type: worker
     name: telegram-promo-bot
     env: python
