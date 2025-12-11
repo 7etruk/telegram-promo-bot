@@ -8,7 +8,8 @@ import time
 from datetime import datetime, timedelta
 
 # --- КОНФІГУРАЦІЯ ---
-TOKEN = os.environ.get('BOT_TOKEN', 'ВСТАВ_СВІЙ_ТОКЕН_ТУТ')
+# Використовуємо змінну середовища. Якщо її немає - спробуємо хардкод (але краще Environment)
+TOKEN = os.environ.get('BOT_TOKEN', 'ВСТАВТЕ_ТОКЕН_ЯКЩО_НЕМАЄ_ENV')
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -19,27 +20,32 @@ PHOTOS_DIR = 'photos'
 BUY_LINK_1 = "https://www.mariamoments.com/checkouts/cn/hWN6Jvmvt2IlLNqxt7cd0yH3/en-ua?_r=AQABDGmwQ_zl-Ob2_e4B2Q40YUPl7SN2y-Ca6EStQGrfIIk&preview_theme_id=157844832476"
 BUY_LINK_2 = "https://www.mariamoments.com/checkouts/cn/hWN6JvtmdIWclh1bDPpLhNon/en-ua?_r=AQABS9ZgBxs59yvSWr_gxtKQut1eBtvnApjLyxbq9w3ohTY&preview_theme_id=157844832476"
 
-# ТЕКСТИ
-# Я встановив назви кнопок однаковими для всіх мов, як на вашому скріншоті.
+# --- ТЕКСТИ ТА ПЕРЕКЛАДИ ---
 TEXTS = {
     'EN': {
         'promo': "EXCLUSIVE CHRISTMAS PROMO: Get your special gift now!",
         'btn1': "💗 Exclusive WhatsApp Access (ONLY 18+)",
         'btn2': "💗 HARD Exclusive WhatsApp Access (ONLY 18+)",
+        'link_text': "🔗 ACCESS NOW",
+        'click_text': "👇 Click below to access:",
         'soft': ["Hey! Don't miss out on this deal.", "Your Christmas gift is waiting!"],
         'hard': ["LAST CHANCE! Offer expires soon.", "Hurry up! Discount ending."]
     },
     'MX': {
         'promo': "PROMO DE NAVIDAD: ¡Obtén tu regalo especial ahora!",
-        'btn1': "💗 Exclusive WhatsApp Access (ONLY 18+)",
-        'btn2': "💗 HARD Exclusive WhatsApp Access (ONLY 18+)",
+        'btn1': "💗 Acceso Exclusivo WhatsApp (SOLO 18+)",
+        'btn2': "💗 Acceso HARD WhatsApp (SOLO 18+)",
+        'link_text': "🔗 ACCESO AHORA",
+        'click_text': "👇 Haga clic abajo para acceder:",
         'soft': ["¡Hola! No te pierdas esta oferta.", "¡Tu regalo de Navidad te espera!"],
         'hard': ["¡ÚLTIMA OPORTUNIDAD! La oferta expira pronto.", "¡Date prisa! El descuento termina."]
     },
     'BR': {
         'promo': "PROMO DE NATAL DA LARAH: Pegue seu presente especial agora!",
-        'btn1': "💗 Exclusive WhatsApp Access (ONLY 18+)",
-        'btn2': "💗 HARD Exclusive WhatsApp Access (ONLY 18+)",
+        'btn1': "💗 Acesso Exclusivo WhatsApp (APENAS 18+)",
+        'btn2': "💗 Acesso HARD WhatsApp (APENAS 18+)",
+        'link_text': "🔗 ACESSO AGORA",
+        'click_text': "👇 Clique abaixo para acessar:",
         'soft': ["Oi! Não perca essa oferta.", "Seu presente de Natal está esperando!"],
         'hard': ["ÚLTIMA CHANCE! A oferta expira em breve.", "Corra! O desconto está acabando."]
     }
@@ -49,13 +55,7 @@ TEXTS = {
 
 def load_data():
     if not os.path.exists(STATS_FILE):
-        return {
-            "users": {},      # user_id: timestamp (last seen)
-            "photos": {},     # user_id: filename
-            "langs": {},      # user_id: lang_code
-            "paid": {},       # user_id: bool
-            "clicked": {}     # user_id: bool
-        }
+        return {"users": {}, "photos": {}, "langs": {}, "paid": {}, "clicked": {}}
     try:
         with open(STATS_FILE, 'r') as f:
             return json.load(f)
@@ -69,7 +69,6 @@ def save_data(data):
     except Exception as e:
         print(f"Error saving data: {e}")
 
-# Ініціалізація даних
 data = load_data()
 
 # --- ДОПОМІЖНІ ФУНКЦІЇ ---
@@ -77,22 +76,14 @@ data = load_data()
 def get_random_photo_file():
     try:
         files = [f for f in os.listdir(PHOTOS_DIR) if os.path.isfile(os.path.join(PHOTOS_DIR, f))]
-        if not files:
-            return None
+        if not files: return None
         return os.path.join(PHOTOS_DIR, random.choice(files))
-    except FileNotFoundError:
-        print(f"Помилка: Папка {PHOTOS_DIR} не знайдена!")
-        return None
+    except: return None
 
 def get_user_photo(user_id):
     user_id = str(user_id)
-    # Якщо у юзера вже є фото, повертаємо його
-    if user_id in data['photos']:
-        photo_path = data['photos'][user_id]
-        if os.path.exists(photo_path):
-            return photo_path
-    
-    # Якщо немає або файл зник - призначаємо нове
+    if user_id in data['photos'] and os.path.exists(data['photos'][user_id]):
+        return data['photos'][user_id]
     new_photo = get_random_photo_file()
     if new_photo:
         data['photos'][user_id] = new_photo
@@ -124,19 +115,18 @@ def set_language(call):
     user_id = str(call.message.chat.id)
     lang_code = call.data.split('_')[1]
     
-    # Зберігаємо мову
+    # Лог для перевірки
+    print(f"User {user_id} selected language: {lang_code}")
+    
     data['langs'][user_id] = lang_code
     save_data(data)
     
-    # Отримуємо фото (закріплене за юзером)
     photo_path = get_user_photo(user_id)
+    txt = TEXTS[lang_code] # Беремо тексти для вибраної мови
     
-    # Тексти
-    txt = TEXTS[lang_code]
-    
-    # Створюємо кнопки з новими назвами
     markup = InlineKeyboardMarkup()
     markup.row_width = 1
+    # Тут кнопки тепер беруться з правильної мови
     markup.add(InlineKeyboardButton(txt['btn1'], callback_data="buy_1"))
     markup.add(InlineKeyboardButton(txt['btn2'], callback_data="buy_2"))
     
@@ -146,142 +136,87 @@ def set_language(call):
                 bot.send_photo(call.message.chat.id, photo, caption=txt['promo'], reply_markup=markup)
         else:
             bot.send_message(call.message.chat.id, txt['promo'], reply_markup=markup)
-            
-        # Видаляємо повідомлення з вибором мови
-        bot.delete_message(call.message.chat.id, call.message.message_id)
         
+        bot.delete_message(call.message.chat.id, call.message.message_id)
     except Exception as e:
         print(f"Error sending promo: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data in ['buy_1', 'buy_2'])
 def handle_buy_click(call):
-    # ЦЕ ВИПРАВЛЕНА ФУНКЦІЯ ДЛЯ УНИКНЕННЯ ПОМИЛКИ 400 URL_INVALID
     user_id = str(call.message.chat.id)
     
-    # Зберігаємо факт кліку
+    # Визначаємо мову юзера, щоб відповісти йому правильною мовою
+    lang_code = data['langs'].get(user_id, 'EN')
+    txt = TEXTS[lang_code]
+
     data['clicked'][user_id] = True
     save_data(data)
     update_user_activity(user_id)
     
-    # Визначаємо URL
     url = BUY_LINK_1 if call.data == 'buy_1' else BUY_LINK_2
     
-    # 1. Відповідаємо Телеграму (прибираємо годинник)
     try:
         bot.answer_callback_query(call.id, text="Processing...")
-    except:
-        pass
+    except: pass
     
-    # 2. Надсилаємо кнопку з посиланням новим повідомленням
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🔗 ACCESS NOW / ACCESO AHORA", url=url))
+    markup.add(InlineKeyboardButton(txt['link_text'], url=url))
     
-    bot.send_message(call.message.chat.id, "👇 Click below to access / Haga clic abajo para acceder:", reply_markup=markup)
+    bot.send_message(call.message.chat.id, txt['click_text'], reply_markup=markup)
 
 # --- АДМІН КОМАНДИ ---
 
 @bot.message_handler(commands=['stats'])
 def admin_stats(message):
-    total_users = len(data['users'])
-    
-    active_30_days = 0
-    now = datetime.now()
-    for ts in data['users'].values():
-        try:
-            last_seen = datetime.fromisoformat(ts)
-            if now - last_seen <= timedelta(days=30):
-                active_30_days += 1
-        except:
-            pass
-            
-    stats_text = (
-        f"📊 **STATISTICS**\n"
-        f"Total Users: {total_users}\n"
-        f"Active (last 30 days): {active_30_days}\n"
-        f"Paid Users: {len([k for k, v in data['paid'].items() if v])}\n"
-        f"Clicked Users: {len([k for k, v in data['clicked'].items() if v])}"
-    )
-    bot.reply_to(message, stats_text, parse_mode="Markdown")
+    total = len(data['users'])
+    paid = len([k for k, v in data['paid'].items() if v])
+    clicked = len([k for k, v in data['clicked'].items() if v])
+    bot.reply_to(message, f"📊 STATS:\nTotal: {total}\nPaid: {paid}\nClicked: {clicked}")
 
 @bot.message_handler(commands=['paid'])
 def set_paid(message):
     try:
-        args = message.text.split()
-        if len(args) > 1:
-            target_id = args[1]
-        else:
-            target_id = str(message.chat.id)
-            
-        data['paid'][target_id] = True
+        target = message.text.split()[1] if len(message.text.split()) > 1 else str(message.chat.id)
+        data['paid'][target] = True
         save_data(data)
-        bot.reply_to(message, f"User {target_id} marked as PAID.")
-    except Exception as e:
-        bot.reply_to(message, "Error. Use: /paid user_id")
+        bot.reply_to(message, f"User {target} set to PAID")
+    except: bot.reply_to(message, "Error")
 
 @bot.message_handler(commands=['unpaid'])
 def set_unpaid(message):
     try:
-        args = message.text.split()
-        if len(args) > 1:
-            target_id = args[1]
-        else:
-            target_id = str(message.chat.id)
-            
-        data['paid'][target_id] = False
+        target = message.text.split()[1] if len(message.text.split()) > 1 else str(message.chat.id)
+        data['paid'][target] = False
         save_data(data)
-        bot.reply_to(message, f"User {target_id} marked as UNPAID.")
-    except Exception as e:
-        bot.reply_to(message, "Error. Use: /unpaid user_id")
+        bot.reply_to(message, f"User {target} set to UNPAID")
+    except: bot.reply_to(message, "Error")
 
-# --- ФОНОВИЙ ПОТІК РЕМАЙНДЕРІВ ---
+# --- REMINDER WORKER ---
 
 def reminder_worker():
     while True:
-        time.sleep(4 * 3600) # 4 години
-        
-        print("Running reminder check...")
-        users_to_remind = []
-        
-        for user_id in list(data['users'].keys()):
-            is_paid = data.get('paid', {}).get(user_id, False)
-            is_clicked = data.get('clicked', {}).get(user_id, False)
-            
-            if not is_paid and not is_clicked:
-                users_to_remind.append(user_id)
+        time.sleep(4 * 3600)
+        users_to_remind = [u for u in data['users'] if not data['paid'].get(u) and not data['clicked'].get(u)]
         
         for user_id in users_to_remind:
             try:
-                lang = data.get('langs', {}).get(user_id, 'EN')
-                
-                options = TEXTS[lang]['soft'] + TEXTS[lang]['hard']
-                text = random.choice(options)
-                
-                photo_path = get_user_photo(user_id)
+                lang = data['langs'].get(user_id, 'EN')
+                txt = TEXTS[lang]
+                text = random.choice(txt['soft'] + txt['hard'])
+                photo = get_user_photo(user_id)
                 
                 markup = InlineKeyboardMarkup()
-                markup.row_width = 1
-                markup.add(InlineKeyboardButton(TEXTS[lang]['btn1'], callback_data="buy_1"))
-                # Додаємо лише першу кнопку в нагадування, або можна обидві
+                markup.add(InlineKeyboardButton(txt['btn1'], callback_data="buy_1"))
                 
-                if photo_path:
-                    with open(photo_path, 'rb') as p:
-                        bot.send_photo(user_id, p, caption=text, reply_markup=markup)
+                if photo:
+                    with open(photo, 'rb') as p: bot.send_photo(user_id, p, caption=text, reply_markup=markup)
                 else:
                     bot.send_message(user_id, text, reply_markup=markup)
-                
-                time.sleep(0.5) 
-                
-            except Exception as e:
-                print(f"Failed to remind user {user_id}: {e}")
+                time.sleep(0.5)
+            except: pass
 
-# Запуск потоку
-reminder_thread = threading.Thread(target=reminder_worker, daemon=True)
-reminder_thread.start()
+threading.Thread(target=reminder_worker, daemon=True).start()
 
-# --- ЗАПУСК БОТА ---
 if __name__ == "__main__":
-    print("Bot started...")
-    if not os.path.exists(PHOTOS_DIR):
-        os.makedirs(PHOTOS_DIR)
-        
+    if not os.path.exists(PHOTOS_DIR): os.makedirs(PHOTOS_DIR)
     bot.infinity_polling()
