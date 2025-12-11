@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 # --- КОНФІГУРАЦІЯ ---
 # Отримання токена зі змінних середовища (для Render) або вставте вручну нижче
-TOKEN = os.environ.get('BOT_TOKEN', 'ВСТАВ_СВІЙ_ТОКЕН_ТУТ')
+TOKEN = os.environ.get('BOT_TOKEN', '8381533144:AAFf6H4FjyEVbs-MSp7B3IBzqMKhLva0f4o')
 
 bot = telebot.TeleBot(TOKEN)
 
