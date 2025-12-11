@@ -8,43 +8,46 @@ import time
 from datetime import datetime, timedelta
 
 # --- КОНФІГУРАЦІЯ ---
-# Використовуємо змінну середовища. Якщо її немає - спробуємо хардкод (але краще Environment)
-TOKEN = os.environ.get('BOT_TOKEN', 'ВСТАВТЕ_ТОКЕН_ЯКЩО_НЕМАЄ_ENV')
+# Цей рядок автоматично знайде токен, як би ви його не назвали в Render (BOT_TOKEN або TOKEN)
+TOKEN = os.environ.get('BOT_TOKEN', os.environ.get('TOKEN', 'ВСТАВ_СВІЙ_ТОКЕН_ТУТ'))
 
 bot = telebot.TeleBot(TOKEN)
 
 STATS_FILE = 'stats.json'
 PHOTOS_DIR = 'photos'
 
-# URLS
+# ВАШІ ПОСИЛАННЯ
 BUY_LINK_1 = "https://www.mariamoments.com/checkouts/cn/hWN6Jvmvt2IlLNqxt7cd0yH3/en-ua?_r=AQABDGmwQ_zl-Ob2_e4B2Q40YUPl7SN2y-Ca6EStQGrfIIk&preview_theme_id=157844832476"
 BUY_LINK_2 = "https://www.mariamoments.com/checkouts/cn/hWN6JvtmdIWclh1bDPpLhNon/en-ua?_r=AQABS9ZgBxs59yvSWr_gxtKQut1eBtvnApjLyxbq9w3ohTY&preview_theme_id=157844832476"
 
-# --- ТЕКСТИ ТА ПЕРЕКЛАДИ ---
+# --- ТЕКСТИ ТА ПЕРЕКЛАДИ КНОПОК ---
 TEXTS = {
     'EN': {
         'promo': "EXCLUSIVE CHRISTMAS PROMO: Get your special gift now!",
+        # Кнопки англійською
         'btn1': "💗 Exclusive WhatsApp Access (ONLY 18+)",
         'btn2': "💗 HARD Exclusive WhatsApp Access (ONLY 18+)",
-        'link_text': "🔗 ACCESS NOW",
+        'link_text': "🔗 OPEN LINK NOW",
         'click_text': "👇 Click below to access:",
         'soft': ["Hey! Don't miss out on this deal.", "Your Christmas gift is waiting!"],
         'hard': ["LAST CHANCE! Offer expires soon.", "Hurry up! Discount ending."]
     },
     'MX': {
         'promo': "PROMO DE NAVIDAD: ¡Obtén tu regalo especial ahora!",
+        # Кнопки іспанською (Мексика)
         'btn1': "💗 Acceso Exclusivo WhatsApp (SOLO 18+)",
         'btn2': "💗 Acceso HARD WhatsApp (SOLO 18+)",
-        'link_text': "🔗 ACCESO AHORA",
+        'link_text': "🔗 ABRIR ENLACE AHORA",
         'click_text': "👇 Haga clic abajo para acceder:",
         'soft': ["¡Hola! No te pierdas esta oferta.", "¡Tu regalo de Navidad te espera!"],
         'hard': ["¡ÚLTIMA OPORTUNIDAD! La oferta expira pronto.", "¡Date prisa! El descuento termina."]
     },
     'BR': {
         'promo': "PROMO DE NATAL DA LARAH: Pegue seu presente especial agora!",
+        # Кнопки португальською (Бразилія)
         'btn1': "💗 Acesso Exclusivo WhatsApp (APENAS 18+)",
         'btn2': "💗 Acesso HARD WhatsApp (APENAS 18+)",
-        'link_text': "🔗 ACESSO AGORA",
+        'link_text': "🔗 ABRIR LINK AGORA",
         'click_text': "👇 Clique abaixo para acessar:",
         'soft': ["Oi! Não perca essa oferta.", "Seu presente de Natal está esperando!"],
         'hard': ["ÚLTIMA CHANCE! A oferta expira em breve.", "Corra! O desconto está acabando."]
@@ -115,18 +118,17 @@ def set_language(call):
     user_id = str(call.message.chat.id)
     lang_code = call.data.split('_')[1]
     
-    # Лог для перевірки
-    print(f"User {user_id} selected language: {lang_code}")
-    
+    # Зберігаємо вибрану мову
     data['langs'][user_id] = lang_code
     save_data(data)
     
+    # Отримуємо фото і тексти для цієї мови
     photo_path = get_user_photo(user_id)
-    txt = TEXTS[lang_code] # Беремо тексти для вибраної мови
+    txt = TEXTS[lang_code] 
     
     markup = InlineKeyboardMarkup()
     markup.row_width = 1
-    # Тут кнопки тепер беруться з правильної мови
+    # ОСЬ ТУТ КНОПКИ ТЕПЕР ПЕРЕКЛАДЕНІ
     markup.add(InlineKeyboardButton(txt['btn1'], callback_data="buy_1"))
     markup.add(InlineKeyboardButton(txt['btn2'], callback_data="buy_2"))
     
@@ -137,6 +139,7 @@ def set_language(call):
         else:
             bot.send_message(call.message.chat.id, txt['promo'], reply_markup=markup)
         
+        # Видаляємо меню вибору мови
         bot.delete_message(call.message.chat.id, call.message.message_id)
     except Exception as e:
         print(f"Error sending promo: {e}")
@@ -155,10 +158,12 @@ def handle_buy_click(call):
     
     url = BUY_LINK_1 if call.data == 'buy_1' else BUY_LINK_2
     
+    # Відповідаємо телеграму, щоб кнопка не "крутилася"
     try:
         bot.answer_callback_query(call.id, text="Processing...")
     except: pass
     
+    # Створюємо кнопку з посиланням
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton(txt['link_text'], url=url))
     
@@ -191,11 +196,12 @@ def set_unpaid(message):
         bot.reply_to(message, f"User {target} set to UNPAID")
     except: bot.reply_to(message, "Error")
 
-# --- REMINDER WORKER ---
+# --- REMINDER WORKER (Розсилка кожні 4 години) ---
 
 def reminder_worker():
     while True:
-        time.sleep(4 * 3600)
+        time.sleep(4 * 3600) # Пауза 4 години
+        
         users_to_remind = [u for u in data['users'] if not data['paid'].get(u) and not data['clicked'].get(u)]
         
         for user_id in users_to_remind:
@@ -206,6 +212,7 @@ def reminder_worker():
                 photo = get_user_photo(user_id)
                 
                 markup = InlineKeyboardMarkup()
+                # Кнопка в нагадуванні теж перекладена
                 markup.add(InlineKeyboardButton(txt['btn1'], callback_data="buy_1"))
                 
                 if photo:
@@ -215,8 +222,11 @@ def reminder_worker():
                 time.sleep(0.5)
             except: pass
 
+# Запуск фонового процесу нагадувань
 threading.Thread(target=reminder_worker, daemon=True).start()
 
+# --- СТАРТ БОТА ---
 if __name__ == "__main__":
     if not os.path.exists(PHOTOS_DIR): os.makedirs(PHOTOS_DIR)
+    print("Bot is running...")
     bot.infinity_polling()
