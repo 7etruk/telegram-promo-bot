@@ -1,1 +1,3 @@
-Place your images here (e.g., 1.jpg, 2.jpg, 3.jpg, 4.jpg, 5.jpg).
+Завантажте сюди 5 зображень.
+Наприклад: 1.jpg, 2.jpg, 3.jpg, 4.jpg, 5.jpg
+Бот буде брати всі файли з цієї папки.
