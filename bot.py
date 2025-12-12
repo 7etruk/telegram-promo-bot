@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Flask
 
-# --- ФЕЙКОВИЙ ВЕБ-СЕРВЕР (Для Render Web Service) ---
+# --- ФЕЙКОВИЙ ВЕБ-СЕРВЕР (Щоб Render не вимикав бота) ---
 app = Flask(__name__)
 
 @app.route('/')
@@ -24,6 +24,7 @@ keep_alive_thread.daemon = True
 keep_alive_thread.start()
 
 # --- КОНФІГУРАЦІЯ БОТА ---
+# Автоматично бере токен з BOT_TOKEN або TOKEN, або використовує заглушку
 TOKEN = os.environ.get('BOT_TOKEN', os.environ.get('TOKEN', 'ВСТАВ_СВІЙ_ТОКЕН_ТУТ'))
 
 bot = telebot.TeleBot(TOKEN)
@@ -31,11 +32,11 @@ bot = telebot.TeleBot(TOKEN)
 STATS_FILE = 'stats.json'
 PHOTOS_DIR = 'photos'
 
-# ВАШІ ПОСИЛАННЯ
-BUY_LINK_1 = "https://www.mariamoments.com/checkouts/cn/hWN6Jvmvt2IlLNqxt7cd0yH3/en-ua?_r=AQABDGmwQ_zl-Ob2_e4B2Q40YUPl7SN2y-Ca6EStQGrfIIk&preview_theme_id=157844832476"
-BUY_LINK_2 = "https://www.mariamoments.com/checkouts/cn/hWN6JvtmdIWclh1bDPpLhNon/en-ua?_r=AQABS9ZgBxs59yvSWr_gxtKQut1eBtvnApjLyxbq9w3ohTY&preview_theme_id=157844832476"
+# ВАШІ НОВІ ПОСИЛАННЯ (STRIPE)
+BUY_LINK_1 = "https://buy.stripe.com/5kQ8wIexcgfi9Mh8kCc3m01"
+BUY_LINK_2 = "https://buy.stripe.com/4gMbIU2Ou2os1fL0Sac3m00"
 
-# --- ТЕКСТИ ---
+# --- ТЕКСТИ ТА ПЕРЕКЛАДИ ---
 TEXTS = {
     'EN': {
         'promo': """I know you're dying to see everything I can do 👀, get access to all my photos and videos in my exclusive group 💕.
@@ -51,8 +52,9 @@ TEXTS = {
 🥇 My full attention just for you
 
 All you need to have fun the way you want is one click and one move, waiting for you in private! 🙈👇🏻""",
-        'btn1': "💗 Exclusive WhatsApp Access (ONLY 18+)",
-        'btn2': "💗 HARD Exclusive WhatsApp Access (ONLY 18+)",
+        # КНОПКИ АНГЛІЙСЬКОЮ
+        'btn1': "🌟Monthly Premium Access🌟♥",
+        'btn2': "🌟Lifetime Premium Access🌟♥♥",
         'link_text': "🔗 OPEN LINK NOW",
         'click_text': "👇 Click below to access:",
         'soft': ["Hey! Don't miss out on this deal.", "Your Christmas gift is waiting!"],
@@ -72,8 +74,9 @@ All you need to have fun the way you want is one click and one move, waiting for
 🥇 Toda mi atención solo para ti
 
 Lo que necesitas para divertirte como quieres es un clic y una sola actitud, ¡te espero en mi privado! 🙈👇🏻""",
-        'btn1': "💗 Acceso Exclusivo WhatsApp (SOLO 18+)",
-        'btn2': "💗 Acceso HARD WhatsApp (SOLO 18+)",
+        # КНОПКИ ІСПАНСЬКОЮ (МЕКСИКА)
+        'btn1': "🌟Acceso Premium Mensual🌟♥",
+        'btn2': "🌟Acceso Premium Vitalicio🌟♥♥",
         'link_text': "🔗 ABRIR ENLACE AHORA",
         'click_text': "👇 Haga clic abajo para acceder:",
         'soft': ["¡Hola! No te pierdas esta oferta.", "¡Tu regalo de Navidad te espera!"],
@@ -84,7 +87,7 @@ Lo que necesitas para divertirte como quieres es un clic y una sola actitud, ¡t
 
 📸 Vídeos e fotos explícitas do jeito que você gosta...
 ㅤㅤ🍑 ANAL
-ㅤㅤ💦 Múltiplos orgasmos e SQUIRTING
+ㅤㅤ💦 Múltiples orgasmos e SQUIRTING
 ㅤㅤ👅 Oral
 ㅤㅤ😈 Videos e fotos com minhas amigas
 ㅤㅤ🙇🏻‍♀️E MUITA penetração
@@ -93,8 +96,9 @@ Lo que necesitas para divertirte como quieres es un clic y una sola actitud, ¡t
 🥇 Minha atenção todinha pra você
 
 O que você precisa para se divertir do jeito que quer é um clique e uma única atitude, te espero no meu privado! 🙈👇🏻""",
-        'btn1': "💗 Acesso Exclusivo WhatsApp (APENAS 18+)",
-        'btn2': "💗 Acesso HARD WhatsApp (APENAS 18+)",
+        # КНОПКИ ПОРТУГАЛЬСЬКОЮ (БРАЗИЛІЯ)
+        'btn1': "🌟Acesso Premium Mensal🌟♥",
+        'btn2': "🌟Acesso Premium Vitalício🌟♥♥",
         'link_text': "🔗 ABRIR LINK AGORA",
         'click_text': "👇 Clique abaixo para acessar:",
         'soft': ["Oi! Não perca essa oferta.", "Seu presente de Natal está esperando!"],
