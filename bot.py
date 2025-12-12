@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Flask
 
-# --- ФЕЙКОВИЙ ВЕБ-СЕРВЕР (Щоб Render не вимикав бота) ---
+# --- ФЕЙКОВИЙ ВЕБ-СЕРВЕР ---
 app = Flask(__name__)
 
 @app.route('/')
@@ -23,8 +23,7 @@ keep_alive_thread = threading.Thread(target=run_web_server)
 keep_alive_thread.daemon = True
 keep_alive_thread.start()
 
-# --- КОНФІГУРАЦІЯ БОТА ---
-# Автоматично бере токен з BOT_TOKEN або TOKEN, або використовує заглушку
+# --- КОНФІГУРАЦІЯ ---
 TOKEN = os.environ.get('BOT_TOKEN', os.environ.get('TOKEN', 'ВСТАВ_СВІЙ_ТОКЕН_ТУТ'))
 
 bot = telebot.TeleBot(TOKEN)
@@ -32,11 +31,24 @@ bot = telebot.TeleBot(TOKEN)
 STATS_FILE = 'stats.json'
 PHOTOS_DIR = 'photos'
 
-# ВАШІ НОВІ ПОСИЛАННЯ (STRIPE)
-BUY_LINK_1 = "https://buy.stripe.com/5kQ8wIexcgfi9Mh8kCc3m01"
-BUY_LINK_2 = "https://buy.stripe.com/4gMbIU2Ou2os1fL0Sac3m00"
+# --- СИСТЕМА ПОСИЛАНЬ ПО КРАЇНАХ ---
+# Тепер посилання прив'язані до мови!
+LINKS = {
+    'EN': { # США (Нові посилання)
+        'buy_1': "https://buy.stripe.com/6oU5kwgFk4wA9Mh44mc3m03",
+        'buy_2': "https://buy.stripe.com/6oU7sEagW3sw2jP8kCc3m02"
+    },
+    'MX': { # Мексика (Посилання з попереднього кроку)
+        'buy_1': "https://buy.stripe.com/5kQ8wIexcgfi9Mh8kCc3m01",
+        'buy_2': "https://buy.stripe.com/4gMbIU2Ou2os1fL0Sac3m00"
+    },
+    'BR': { # Бразилія (Посилання з попереднього кроку)
+        'buy_1': "https://buy.stripe.com/5kQ8wIexcgfi9Mh8kCc3m01",
+        'buy_2': "https://buy.stripe.com/4gMbIU2Ou2os1fL0Sac3m00"
+    }
+}
 
-# --- ТЕКСТИ ТА ПЕРЕКЛАДИ ---
+# --- ТЕКСТИ ---
 TEXTS = {
     'EN': {
         'promo': """I know you're dying to see everything I can do 👀, get access to all my photos and videos in my exclusive group 💕.
@@ -52,7 +64,6 @@ TEXTS = {
 🥇 My full attention just for you
 
 All you need to have fun the way you want is one click and one move, waiting for you in private! 🙈👇🏻""",
-        # КНОПКИ АНГЛІЙСЬКОЮ
         'btn1': "🌟Monthly Premium Access🌟♥",
         'btn2': "🌟Lifetime Premium Access🌟♥♥",
         'link_text': "🔗 OPEN LINK NOW",
@@ -74,7 +85,6 @@ All you need to have fun the way you want is one click and one move, waiting for
 🥇 Toda mi atención solo para ti
 
 Lo que necesitas para divertirte como quieres es un clic y una sola actitud, ¡te espero en mi privado! 🙈👇🏻""",
-        # КНОПКИ ІСПАНСЬКОЮ (МЕКСИКА)
         'btn1': "🌟Acceso Premium Mensual🌟♥",
         'btn2': "🌟Acceso Premium Vitalicio🌟♥♥",
         'link_text': "🔗 ABRIR ENLACE AHORA",
@@ -96,7 +106,6 @@ Lo que necesitas para divertirte como quieres es un clic y una sola actitud, ¡t
 🥇 Minha atenção todinha pra você
 
 O que você precisa para se divertir do jeito que quer é um clique e uma única atitude, te espero no meu privado! 🙈👇🏻""",
-        # КНОПКИ ПОРТУГАЛЬСЬКОЮ (БРАЗИЛІЯ)
         'btn1': "🌟Acesso Premium Mensal🌟♥",
         'btn2': "🌟Acesso Premium Vitalício🌟♥♥",
         'link_text': "🔗 ABRIR LINK AGORA",
@@ -184,6 +193,7 @@ def set_language(call):
 @bot.callback_query_handler(func=lambda call: call.data in ['buy_1', 'buy_2'])
 def handle_buy_click(call):
     user_id = str(call.message.chat.id)
+    # Визначаємо мову, щоб дати правильне посилання
     lang_code = data['langs'].get(user_id, 'EN')
     txt = TEXTS[lang_code]
 
@@ -191,7 +201,14 @@ def handle_buy_click(call):
     save_data(data)
     update_user_activity(user_id)
     
-    url = BUY_LINK_1 if call.data == 'buy_1' else BUY_LINK_2
+    # ЛОГІКА ВИБОРУ ПОСИЛАННЯ:
+    # Беремо зі словника LINKS -> [Мова] -> [Тип кнопки]
+    # Якщо щось піде не так, за дефолтом беремо англійську версію
+    try:
+        btn_key = call.data # 'buy_1' або 'buy_2'
+        url = LINKS[lang_code][btn_key]
+    except:
+        url = LINKS['EN']['buy_1'] # Fallback
     
     try: bot.answer_callback_query(call.id, text="Processing...")
     except: pass
