@@ -31,18 +31,17 @@ bot = telebot.TeleBot(TOKEN)
 STATS_FILE = 'stats.json'
 PHOTOS_DIR = 'photos'
 
-# --- СИСТЕМА ПОСИЛАНЬ ПО КРАЇНАХ ---
-# Тепер посилання прив'язані до мови!
+# --- СИСТЕМА ПОСИЛАНЬ ---
 LINKS = {
-    'EN': { # США (Нові посилання)
+    'EN': { # США
         'buy_1': "https://buy.stripe.com/6oU5kwgFk4wA9Mh44mc3m03",
         'buy_2': "https://buy.stripe.com/6oU7sEagW3sw2jP8kCc3m02"
     },
-    'MX': { # Мексика (Посилання з попереднього кроку)
+    'MX': { # Мексика
         'buy_1': "https://buy.stripe.com/5kQ8wIexcgfi9Mh8kCc3m01",
         'buy_2': "https://buy.stripe.com/4gMbIU2Ou2os1fL0Sac3m00"
     },
-    'BR': { # Бразилія (Посилання з попереднього кроку)
+    'BR': { # Бразилія
         'buy_1': "https://buy.stripe.com/5kQ8wIexcgfi9Mh8kCc3m01",
         'buy_2': "https://buy.stripe.com/4gMbIU2Ou2os1fL0Sac3m00"
     }
@@ -193,7 +192,6 @@ def set_language(call):
 @bot.callback_query_handler(func=lambda call: call.data in ['buy_1', 'buy_2'])
 def handle_buy_click(call):
     user_id = str(call.message.chat.id)
-    # Визначаємо мову, щоб дати правильне посилання
     lang_code = data['langs'].get(user_id, 'EN')
     txt = TEXTS[lang_code]
 
@@ -201,14 +199,11 @@ def handle_buy_click(call):
     save_data(data)
     update_user_activity(user_id)
     
-    # ЛОГІКА ВИБОРУ ПОСИЛАННЯ:
-    # Беремо зі словника LINKS -> [Мова] -> [Тип кнопки]
-    # Якщо щось піде не так, за дефолтом беремо англійську версію
     try:
-        btn_key = call.data # 'buy_1' або 'buy_2'
+        btn_key = call.data 
         url = LINKS[lang_code][btn_key]
     except:
-        url = LINKS['EN']['buy_1'] # Fallback
+        url = LINKS['EN']['buy_1']
     
     try: bot.answer_callback_query(call.id, text="Processing...")
     except: pass
@@ -217,13 +212,35 @@ def handle_buy_click(call):
     markup.add(InlineKeyboardButton(txt['link_text'], url=url))
     bot.send_message(call.message.chat.id, txt['click_text'], reply_markup=markup)
 
-# --- АДМІН ---
+# --- АДМІН СТАТИСТИКА (ОНОВЛЕНО) ---
 @bot.message_handler(commands=['stats'])
 def admin_stats(message):
     total = len(data['users'])
+    
+    # Логіка для "Цього місяця"
+    now = datetime.now()
+    active_this_month = 0
+    
+    for ts in data['users'].values():
+        try:
+            last_seen = datetime.fromisoformat(ts)
+            # Перевіряємо, чи співпадає місяць і рік з поточним
+            if last_seen.month == now.month and last_seen.year == now.year:
+                active_this_month += 1
+        except:
+            pass
+
     paid = len([k for k, v in data['paid'].items() if v])
     clicked = len([k for k, v in data['clicked'].items() if v])
-    bot.reply_to(message, f"📊 STATS:\nTotal: {total}\nPaid: {paid}\nClicked: {clicked}")
+    
+    stats_text = (
+        f"📊 **STATISTICS**\n\n"
+        f"👥 Total Users: {total}\n"
+        f"📅 Active (This Month): {active_this_month}\n"
+        f"💰 Paid Users: {paid}\n"
+        f"🔗 Clicked Link: {clicked}"
+    )
+    bot.reply_to(message, stats_text, parse_mode="Markdown")
 
 @bot.message_handler(commands=['paid'])
 def set_paid(message):
