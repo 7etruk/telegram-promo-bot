@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Flask
 
-# ------------------ KEEP ALIVE ------------------
+# ================= KEEP ALIVE =================
 app = Flask(__name__)
 
 @app.route('/')
@@ -21,14 +21,14 @@ def run_web_server():
 
 threading.Thread(target=run_web_server, daemon=True).start()
 
-# ------------------ CONFIG ------------------
-TOKEN = os.environ.get('BOT_TOKEN', 'PUT_TOKEN_HERE')
+# ================= CONFIG =================
+TOKEN = os.environ.get('BOT_TOKEN', os.environ.get('TOKEN', 'PUT_TOKEN_HERE'))
 bot = telebot.TeleBot(TOKEN)
 
 STATS_FILE = 'stats.json'
 PHOTOS_DIR = 'photos'
 
-# ------------------ LINKS ------------------
+# ================= LINKS =================
 LINKS = {
     'EN': {
         'buy_1': "https://buy.stripe.com/EN_MONTH",
@@ -44,38 +44,44 @@ LINKS = {
     }
 }
 
-# ------------------ TEXTS ------------------
+# ================= TEXTS =================
 TEXTS = {
     'EN': {
         'promo': "🔥 Exclusive private content\n👇 Choose access:",
-        'btn1': "🌟 Monthly Access",
-        'btn2': "💎 Lifetime Access",
-        'link_text': "🔗 OPEN PAYMENT",
-        'click_text': "👇 Click to continue"
+        'btn1': "🌟Monthly Premium Access🌟♥",
+        'btn2': "🌟Lifetime Premium Access🌟♥♥",
+        'link_text': "🔗 OPEN LINK NOW",
+        'click_text': "👇 Click below to access:",
+        'soft': ["Hey! Don't miss out on this deal."],
+        'hard': ["LAST CHANCE! Offer expires soon."]
     },
     'MX': {
         'promo': "🔥 Contenido privado exclusivo\n👇 Elige acceso:",
-        'btn1': "🌟 Acceso Mensual",
-        'btn2': "💎 Acceso Vitalicio",
-        'link_text': "🔗 ABRIR PAGO",
-        'click_text': "👇 Haz clic para continuar"
+        'btn1': "🌟Acceso Premium Mensual🌟♥",
+        'btn2': "🌟Acceso Premium Vitalicio🌟♥♥",
+        'link_text': "🔗 ABRIR ENLACE AHORA",
+        'click_text': "👇 Haga clic abajo para acceder:",
+        'soft': ["¡Hola! No te pierdas esta oferta."],
+        'hard': ["¡ÚLTIMA OPORTUNIDAD!"]
     },
     'BR': {
         'promo': "🔥 Conteúdo privado exclusivo\n👇 Escolha o acesso:",
-        'btn1': "🌟 Acesso Mensal",
-        'btn2': "💎 Acesso Vitalício",
-        'link_text': "🔗 ABRIR PAGAMENTO",
-        'click_text': "👇 Clique para continuar"
+        'btn1': "🌟Acesso Premium Mensal🌟♥",
+        'btn2': "🌟Acesso Premium Vitalício🌟♥♥",
+        'link_text': "🔗 ABRIR LINK AGORA",
+        'click_text': "👇 Clique abaixo para acessar:",
+        'soft': ["Oi! Não perca essa oferta."],
+        'hard': ["ÚLTIMA CHANCE!"]
     }
 }
 
-# ------------------ DATA ------------------
+# ================= DATA =================
 def empty_data():
     return {
-        "users": {},
+        "users": {},     # user_id → {first_seen, last_seen, visits}
         "langs": {},
-        "refs": {},
-        "clicked": {},
+        "photos": {},
+        "clicked": {},   # user_id → count
         "paid": {}
     }
 
@@ -94,8 +100,8 @@ def save_data():
 
 data = load_data()
 
-# ------------------ USER TRACKING ------------------
-def update_user(user_id):
+# ================= USER TRACKING =================
+def update_user_activity(user_id):
     user_id = str(user_id)
     now = datetime.now().isoformat()
 
@@ -106,117 +112,159 @@ def update_user(user_id):
             "visits": 1
         }
     else:
-        data['users'][user_id]["last_seen"] = now
-        data['users'][user_id]["visits"] += 1
+        data['users'][user_id]['last_seen'] = now
+        data['users'][user_id]['visits'] += 1
 
     save_data()
 
-# ------------------ START ------------------
-@bot.message_handler(commands=['start'])
-def start(message):
-    user_id = str(message.chat.id)
-    update_user(user_id)
+# ================= PHOTOS =================
+def get_random_photo():
+    try:
+        files = [f for f in os.listdir(PHOTOS_DIR) if os.path.isfile(os.path.join(PHOTOS_DIR, f))]
+        return os.path.join(PHOTOS_DIR, random.choice(files)) if files else None
+    except:
+        return None
 
-    ref = message.text.replace('/start', '').strip() or 'direct'
-    data['refs'][user_id] = ref
-    save_data()
+def get_user_photo(user_id):
+    user_id = str(user_id)
+    if user_id in data['photos'] and os.path.exists(data['photos'][user_id]):
+        return data['photos'][user_id]
+    photo = get_random_photo()
+    if photo:
+        data['photos'][user_id] = photo
+        save_data()
+    return photo
 
-    kb = InlineKeyboardMarkup()
+# ================= START =================
+@bot.message_handler(commands=['start', 'language'])
+def send_welcome(message):
+    update_user_activity(message.chat.id)
+
+    kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
         InlineKeyboardButton("🇺🇸 English", callback_data="lang_EN"),
-        InlineKeyboardButton("🇲🇽 Español", callback_data="lang_MX"),
-        InlineKeyboardButton("🇧🇷 Português", callback_data="lang_BR")
+        InlineKeyboardButton("🇲🇽 Español MX", callback_data="lang_MX"),
+        InlineKeyboardButton("🇧🇷 Português BR", callback_data="lang_BR")
     )
 
     bot.send_message(
         message.chat.id,
-        "Select language:",
+        "Please select your language:",
         reply_markup=kb
     )
 
-# ------------------ LANGUAGE ------------------
-@bot.callback_query_handler(func=lambda c: c.data.startswith("lang_"))
-def set_lang(c):
+# ================= LANGUAGE =================
+@bot.callback_query_handler(func=lambda c: c.data.startswith('lang_'))
+def set_language(c):
     user_id = str(c.message.chat.id)
-    lang = c.data.split("_")[1]
+    lang = c.data.split('_')[1]
 
     data['langs'][user_id] = lang
     save_data()
+    update_user_activity(user_id)
 
     txt = TEXTS[lang]
-    kb = InlineKeyboardMarkup()
+    kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
         InlineKeyboardButton(txt['btn1'], callback_data="buy_1"),
         InlineKeyboardButton(txt['btn2'], callback_data="buy_2")
     )
 
-    bot.send_message(c.message.chat.id, txt['promo'], reply_markup=kb)
+    photo = get_user_photo(user_id)
+    if photo:
+        with open(photo, 'rb') as p:
+            bot.send_photo(c.message.chat.id, p, caption=txt['promo'], reply_markup=kb)
+    else:
+        bot.send_message(c.message.chat.id, txt['promo'], reply_markup=kb)
+
     bot.delete_message(c.message.chat.id, c.message.message_id)
 
-# ------------------ BUY CLICK ------------------
+# ================= BUY CLICK =================
 @bot.callback_query_handler(func=lambda c: c.data in ['buy_1', 'buy_2'])
-def buy_click(c):
+def handle_buy(c):
     user_id = str(c.message.chat.id)
-    update_user(user_id)
+    update_user_activity(user_id)
+
+    data['clicked'][user_id] = data['clicked'].get(user_id, 0) + 1
+    save_data()
 
     lang = data['langs'].get(user_id, 'EN')
     txt = TEXTS[lang]
-
-    data['clicked'].setdefault(user_id, [])
-    data['clicked'][user_id].append({
-        "btn": c.data,
-        "time": datetime.now().isoformat()
-    })
-    save_data()
-
     url = LINKS.get(lang, LINKS['EN'])[c.data]
 
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton(txt['link_text'], url=url))
+
     bot.send_message(c.message.chat.id, txt['click_text'], reply_markup=kb)
 
-# ------------------ PAID CONFIRM ------------------
+# ================= PAID =================
 @bot.message_handler(commands=['paid'])
-def paid_cmd(message):
-    uid = str(message.chat.id)
-    data['paid'][uid] = True
+def set_paid(message):
+    data['paid'][str(message.chat.id)] = True
     save_data()
-    bot.reply_to(message, "✅ Payment confirmed")
+    bot.reply_to(message, "✅ User marked as PAID")
 
 @bot.message_handler(commands=['unpaid'])
-def unpaid_cmd(message):
-    uid = str(message.chat.id)
-    data['paid'][uid] = False
+def set_unpaid(message):
+    data['paid'][str(message.chat.id)] = False
     save_data()
-    bot.reply_to(message, "❌ Payment removed")
+    bot.reply_to(message, "❌ User marked as UNPAID")
 
-# ------------------ STATS ------------------
+# ================= STATS =================
 @bot.message_handler(commands=['stats'])
 def stats(message):
     now = datetime.now()
+
     total = len(data['users'])
 
-    active_7d = 0
+    active_month = 0
     for u in data['users'].values():
         last = datetime.fromisoformat(u['last_seen'])
-        if last > now - timedelta(days=7):
-            active_7d += 1
+        if last.month == now.month and last.year == now.year:
+            active_month += 1
 
-    clicked = len(data['clicked'])
+    clicked = sum(data['clicked'].values())
     paid = len([u for u, v in data['paid'].items() if v])
 
     text = (
         f"📊 STATISTICS\n\n"
         f"👥 Total users: {total}\n"
-        f"⚡ Active (7 days): {active_7d}\n"
-        f"🔗 Clicked payment: {clicked}\n"
-        f"💰 Paid users: {paid}\n"
+        f"📅 Active this month: {active_month}\n"
+        f"🔗 Total clicks: {clicked}\n"
+        f"💰 Paid users: {paid}"
     )
 
     bot.reply_to(message, text)
 
-# ------------------ RUN ------------------
+# ================= REMINDERS =================
+def reminder_worker():
+    while True:
+        time.sleep(4 * 3600)
+        for user_id in data['users']:
+            if data['paid'].get(user_id):
+                continue
+            lang = data['langs'].get(user_id, 'EN')
+            txt = TEXTS[lang]
+            text = random.choice(txt['soft'] + txt['hard'])
+            photo = get_user_photo(user_id)
+
+            kb = InlineKeyboardMarkup()
+            kb.add(InlineKeyboardButton(txt['btn1'], callback_data="buy_1"))
+
+            try:
+                if photo:
+                    with open(photo, 'rb') as p:
+                        bot.send_photo(user_id, p, caption=text, reply_markup=kb)
+                else:
+                    bot.send_message(user_id, text, reply_markup=kb)
+                time.sleep(0.5)
+            except:
+                pass
+
+threading.Thread(target=reminder_worker, daemon=True).start()
+
+# ================= RUN =================
 if __name__ == "__main__":
     os.makedirs(PHOTOS_DIR, exist_ok=True)
-    print("Bot running...")
+    print("Bot is running...")
     bot.infinity_polling()
