@@ -1,56 +1,49 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-import json, os, time, random, threading
-from datetime import datetime, timedelta
-from flask import Flask
+import os, json, time, random
+from datetime import datetime
 from openai import OpenAI
-
-# ================= KEEP ALIVE =================
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Bot is running"
-
-def run_web():
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
-
-threading.Thread(target=run_web, daemon=True).start()
 
 # ================= CONFIG =================
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_KEY = os.environ.get("OPENAI_API_KEY")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
-bot = telebot.TeleBot(BOT_TOKEN)
-client = OpenAI(api_key=OPENAI_KEY)
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN not set")
 
-STATS_FILE = "stats.json"
-MAX_MEMORY = 6   # скільки повідомлень памʼяті зберігаємо
+if not OPENAI_API_KEY:
+    raise RuntimeError("OPENAI_API_KEY not set")
+
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+DATA_FILE = "stats.json"
+MAX_MEMORY = 6
 
 # ================= DATA =================
 def empty_data():
     return {
-        "users": {},       # first_seen, last_seen, visits
-        "langs": {},       # user language
-        "started": {},     # user passed /start
+        "users": {},
+        "started": {},
+        "langs": {},
+        "memory": {},
+        "ai_msgs": {},
         "paid": {},
-        "clicked": {},
-        "ai_msgs": {},     # AI message count
-        "memory": {}       # dialog memory
+        "clicked": {}
     }
 
-def load():
-    if not os.path.exists(STATS_FILE):
+def load_data():
+    if not os.path.exists(DATA_FILE):
         return empty_data()
     try:
-        return json.load(open(STATS_FILE))
+        return json.load(open(DATA_FILE))
     except:
         return empty_data()
 
-def save():
-    json.dump(data, open(STATS_FILE, "w"), indent=2)
+def save_data():
+    json.dump(data, open(DATA_FILE, "w"), indent=2)
 
-data = load()
+data = load_data()
 
 # ================= USER TRACK =================
 def touch(uid):
@@ -65,7 +58,7 @@ def touch(uid):
     else:
         data["users"][uid]["last_seen"] = now
         data["users"][uid]["visits"] += 1
-    save()
+    save_data()
 
 # ================= START =================
 @bot.message_handler(commands=["start"])
@@ -76,7 +69,7 @@ def start(msg):
     data["started"][uid] = True
     data["memory"][uid] = []
     data["ai_msgs"][uid] = 0
-    save()
+    save_data()
 
     kb = InlineKeyboardMarkup()
     kb.add(
@@ -96,61 +89,56 @@ def start(msg):
 def set_lang(c):
     uid = str(c.message.chat.id)
     lang = c.data.split("_")[1]
-
     data["langs"][uid] = lang
-    save()
+    save_data()
 
-    bot.send_message(
-        c.message.chat.id,
-        "Hey 😘 write me something…"
-    )
+    bot.send_message(c.message.chat.id, "Hey 😘 write me something…")
     bot.delete_message(c.message.chat.id, c.message.message_id)
 
-# ================= BUY BUTTON =================
+# ================= BUY =================
 @bot.callback_query_handler(func=lambda c: c.data == "buy")
 def buy(c):
     uid = str(c.message.chat.id)
     data["clicked"][uid] = data["clicked"].get(uid, 0) + 1
-    save()
+    save_data()
 
     bot.send_message(
         c.message.chat.id,
-        "Access is private and instant 😈\nPress when ready 👇"
+        "🔥 Private access is instant and exclusive 😈"
     )
 
-# ================= AI SYSTEM PROMPT =================
+# ================= AI =================
 SYSTEM_PROMPT = """
 You are a flirty, playful, charming woman chatting privately in Telegram.
 Rules:
-- Be natural, short, friendly
+- Be short and natural
 - Ask questions
 - Light emojis 😘🔥
 - NO explicit sexual content
 - NO prices
 - NO payment links
-- Suggest private access gently after 2–4 messages
+- Gently suggest private access after 2–4 messages
 """
 
-# ================= AI CHAT =================
 @bot.message_handler(func=lambda m: True)
 def ai_chat(msg):
     uid = str(msg.chat.id)
-    text = msg.text
 
-    # ❌ AI тільки після /start
+    # AI only after /start
     if not data["started"].get(uid):
         bot.send_message(msg.chat.id, "Press /start first 😘")
         return
 
-    # ❌ якщо вже платив — AI мовчить
+    # stop AI for paid users
     if data["paid"].get(uid):
         return
 
     touch(uid)
 
-    # памʼять
+    user_text = msg.text
     memory = data["memory"].get(uid, [])
-    memory.append({"role": "user", "content": text})
+
+    memory.append({"role": "user", "content": user_text})
     memory = memory[-MAX_MEMORY:]
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + memory
@@ -164,18 +152,17 @@ def ai_chat(msg):
 
         reply = r.choices[0].message.content
 
-        # додаємо відповідь AI в памʼять
         memory.append({"role": "assistant", "content": reply})
         memory = memory[-MAX_MEMORY:]
 
         data["memory"][uid] = memory
         data["ai_msgs"][uid] += 1
-        save()
+        save_data()
 
         time.sleep(random.uniform(1, 2))
         bot.send_message(msg.chat.id, reply)
 
-        # кнопка продажу після 3 AI відповідей
+        # show button after 3 AI replies
         if data["ai_msgs"][uid] == 3:
             kb = InlineKeyboardMarkup()
             kb.add(InlineKeyboardButton("🔥 Private access", callback_data="buy"))
@@ -200,5 +187,16 @@ def stats(msg):
     )
 
 # ================= RUN =================
-print("Bot running...")
-bot.infinity_polling()
+print("Bot started (Background Worker mode)")
+
+while True:
+    try:
+        bot.infinity_polling(
+            timeout=10,
+            long_polling_timeout=5,
+            skip_pending=True,
+            threaded=False
+        )
+    except Exception as e:
+        print("Polling error:", e)
+        time.sleep(5)
