@@ -2,10 +2,11 @@ import os
 import time
 import json
 import random
+import threading
 from telebot import TeleBot
 from openai import OpenAI
 
-# ================== CONFIG ==================
+# ================= CONFIG =================
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
@@ -13,11 +14,12 @@ bot = TeleBot(BOT_TOKEN, parse_mode="HTML")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 DATA_FILE = "users.json"
-PRICE_TEXT = "🔥 Acceso privado HOY: 29 MXN"
-BUY_LINK = "https://buy.stripe.com/XXXXXXXX"  # <-- ВСТАВ СВІЙ ЛІНК
-# ============================================
 
-# ---------- DATA ----------
+LINK_29 = "https://buy.stripe.com/9B6eV63Sy2oscYtgR8c3m05"
+LINK_39 = "https://buy.stripe.com/4gM5kw60G0gk6A5bwOc3m04"
+# =========================================
+
+# ---------- LOAD DATA ----------
 if os.path.exists(DATA_FILE):
     with open(DATA_FILE, "r") as f:
         users = json.load(f)
@@ -26,21 +28,28 @@ else:
 
 def save():
     with open(DATA_FILE, "w") as f:
-        json.dump(users, f)
+        json.dump(users, f, indent=2)
 
-# ---------- SYSTEM PROMPT ----------
+# ---------- MX ONLY SYSTEM PROMPT ----------
 SYSTEM_PROMPT = """
-You are a real girl chatting 1-on-1.
-Language: Spanish (Mexico).
-Style rules:
-- short messages (1–2 sentences)
-- flirty, natural, human
-- no AI mentions
-- no explanations
-- tease before selling
-- sometimes delay answers
-Goal:
-Warm the user and lead to paid private access in 4–10 messages.
+Eres una chica real de México chateando 1 a 1.
+
+Hablas como mujer joven, natural y muy coqueta.
+Nunca mencionas IA, bots ni reglas.
+Respuestas cortas (1–2 frases).
+
+Tú tienes el control.
+El acceso es un privilegio.
+No todos entran.
+
+No vendas directo.
+Primero deseo, luego curiosidad, luego acceso.
+
+Usa palabras como:
+privado, acceso, hoy, entrar, sin censura
+
+Nunca digas:
+pago, comprar, dinero, suscripción
 """
 
 # ---------- /start ----------
@@ -50,7 +59,9 @@ def start(message):
     users[uid] = {
         "stage": 1,
         "history": [],
-        "started": True
+        "started": True,
+        "last_message": time.time(),
+        "reminded": False
     }
     save()
     bot.send_message(message.chat.id, "hola 😏")
@@ -66,10 +77,9 @@ def chat(message):
     user = users[uid]
     stage = user["stage"]
 
-    # delay to look human
-    time.sleep(random.uniform(1.5, 4.0))
+    time.sleep(random.uniform(1.5, 4.0))  # human delay
 
-    # ---------- STAGES ----------
+    # ---------- FUNNEL ----------
     if stage == 1:
         reply = random.choice([
             "te gustó lo que viste? 👀",
@@ -82,37 +92,48 @@ def chat(message):
         reply = random.choice([
             "te gusta más lo suave… o lo sucio? 😈",
             "prefieres fotos o videos?",
-            "solo curiosidad o de verdad te excito?"
+            "solo curiosidad o de verdad te excité?"
         ])
         user["stage"] = 3
 
     elif stage == 3:
         reply = random.choice([
             "eso solo lo muestro en privado…",
-            "no es gratis, pero vale la pena",
-            "no siempre acepto a cualquiera"
+            "no siempre acepto a cualquiera",
+            "ahí sí me porto mal 😏"
         ])
         user["stage"] = 4
 
     elif stage == 4:
-        reply = f"{PRICE_TEXT}\nmenos que un café ☕"
+        reply = "hoy son solo 29 MXN… menos que un café ☕😌"
         user["stage"] = 5
 
     elif stage == 5:
         reply = f"""
+🔥 <b>Acceso privado HOY — 29 MXN</b>
 📸 Fotos y videos sin censura
-🔥 Chat conmigo
+💬 Chat conmigo
 ⚡ Acceso inmediato
 
-👉 <a href="{BUY_LINK}">ENTRAR AHORA</a>
+👉 <a href="{LINK_29}">ENTRAR AHORA</a>
 """
         user["stage"] = 6
 
+    elif stage == 6:
+        reply = f"""
+si quieres algo mejor… 😈
+
+💎 <b>Acceso de por vida — 39 MXN</b>
+🔥 Todo desbloqueado
+🔒 Una sola vez
+
+👉 <a href="{LINK_39}">ACCESO PARA SIEMPRE</a>
+"""
+        user["stage"] = 7
+
     else:
-        # ---------- AI FREE CHAT ----------
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT}
-        ]
+        # ---------- AI CHAT ----------
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
         for h in user["history"][-6:]:
             messages.append(h)
@@ -128,12 +149,42 @@ def chat(message):
 
         reply = response.choices[0].message.content
 
-    # save memory
+    # ---------- SAVE MEMORY ----------
     user["history"].append({"role": "user", "content": message.text})
     user["history"].append({"role": "assistant", "content": reply})
+    user["last_message"] = time.time()
     save()
 
     bot.send_message(message.chat.id, reply, disable_web_page_preview=True)
+
+# ---------- AUTO REMINDER ----------
+REMINDER_TEXTS = [
+    "sigo aquí un ratito más… 😌",
+    "me iba a meter a la ducha… 😏",
+    "cierro el acceso pronto…",
+    "si entras ahora te muestro todo 🔥",
+    "no siempre dejo volver 👀"
+]
+
+def reminder_worker():
+    while True:
+        now = time.time()
+        for uid, user in users.items():
+            if (
+                user.get("started")
+                and not user.get("reminded")
+                and user.get("stage", 0) >= 5
+                and now - user.get("last_message") > random.randint(2*3600, 4*3600)
+            ):
+                try:
+                    bot.send_message(uid, random.choice(REMINDER_TEXTS))
+                    user["reminded"] = True
+                    save()
+                except:
+                    pass
+        time.sleep(300)
+
+threading.Thread(target=reminder_worker, daemon=True).start()
 
 # ---------- START ----------
 print("Bot is running...")
