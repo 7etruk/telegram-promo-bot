@@ -9,12 +9,12 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN not set")
+    raise RuntimeError("BOT_TOKEN is not set")
 
 if not OPENAI_API_KEY:
-    raise RuntimeError("OPENAI_API_KEY not set")
+    raise RuntimeError("OPENAI_API_KEY is not set")
 
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
+bot = telebot.TeleBot(BOT_TOKEN)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 DATA_FILE = "stats.json"
@@ -36,12 +36,14 @@ def load_data():
     if not os.path.exists(DATA_FILE):
         return empty_data()
     try:
-        return json.load(open(DATA_FILE))
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
     except:
         return empty_data()
 
 def save_data():
-    json.dump(data, open(DATA_FILE, "w"), indent=2)
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
 data = load_data()
 
@@ -49,6 +51,7 @@ data = load_data()
 def touch(uid):
     uid = str(uid)
     now = datetime.now().isoformat()
+
     if uid not in data["users"]:
         data["users"][uid] = {
             "first_seen": now,
@@ -58,6 +61,7 @@ def touch(uid):
     else:
         data["users"][uid]["last_seen"] = now
         data["users"][uid]["visits"] += 1
+
     save_data()
 
 # ================= START =================
@@ -110,6 +114,7 @@ def buy(c):
 # ================= AI =================
 SYSTEM_PROMPT = """
 You are a flirty, playful, charming woman chatting privately in Telegram.
+
 Rules:
 - Be short and natural
 - Ask questions
@@ -144,13 +149,13 @@ def ai_chat(msg):
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + memory
 
     try:
-        r = client.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=messages,
             max_tokens=120
         )
 
-        reply = r.choices[0].message.content
+        reply = response.choices[0].message.content
 
         memory.append({"role": "assistant", "content": reply})
         memory = memory[-MAX_MEMORY:]
@@ -187,15 +192,14 @@ def stats(msg):
     )
 
 # ================= RUN =================
-print("Bot started (Background Worker mode)")
+print("Bot started (Render Background Worker mode)")
 
 while True:
     try:
         bot.infinity_polling(
             timeout=10,
             long_polling_timeout=5,
-            skip_pending=True,
-            threaded=False
+            skip_pending=True
         )
     except Exception as e:
         print("Polling error:", e)
