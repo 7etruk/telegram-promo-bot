@@ -3,7 +3,7 @@ import time
 import json
 import random
 from telebot import TeleBot
-from openai import OpenAI
+from openai import OpenAI, RateLimitError, OpenAIError
 
 # ================= CONFIG =================
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -29,51 +29,42 @@ def save():
 
 # ---------- HUMAN BEHAVIOR ----------
 def human_delay(text):
-    base = random.uniform(2.0, 5.0)
-    extra = min(len(text) / 30, 5)
+    base = random.uniform(2.5, 5.0)
+    extra = min(len(text) / 35, 5)
     time.sleep(base + extra)
 
 def read_and_silence():
-    return random.random() < 0.18  # 18% "прочитала і мовчить"
+    return random.random() < 0.15  # 15% "прочитала і мовчить"
 
 def double_message():
-    return random.random() < 0.3   # 30% друге повідомлення
+    return random.random() < 0.25
+
+# ---------- FALLBACK PHRASES (NO AI) ----------
+FALLBACK_REPLIES = [
+    "mmm… dime 😌",
+    "te leo 👀",
+    "qué te provoca ahora?",
+    "no me escriben así todos…",
+    "y eso por qué? 😏"
+]
 
 # ---------- SYSTEM PROMPT ----------
 SYSTEM_PROMPT = """
 You are a real woman chatting privately 1-on-1.
 
-You MUST reply in the SAME language the user writes.
-Never mix languages.
+Always reply in the SAME language as the user.
+Never mention AI, bots or systems.
 
-You fully understand the user's message and reply contextually.
-You ask deeper questions sometimes.
-Your messages can be longer (2–4 sentences), but still natural.
+Messages can be 2–4 sentences sometimes.
+You ask natural questions.
+You tease before inviting to private access.
 
-You have ONE personality for this user:
-{personality}
+Personalities:
+Sweet – warm, playful, curious.
+Bold – confident, provocative, dominant.
 
-PERSONALITIES:
-
-Sweet:
-- warm, caring, playful
-- gentle teasing
-- curious about him
-
-Bold:
-- confident, daring
-- provocative questions
-- dominant energy
-
-RULES:
-- Never mention AI, bot, system
-- No selling directly
-- Access is a privilege
-- You decide when to invite
-
-GOAL:
-Have a natural conversation up to ~15 messages,
-build desire and curiosity,
+Goal:
+Up to ~15 messages of natural chat,
 then gently guide to private paid access.
 """
 
@@ -86,18 +77,21 @@ def chat(message):
     # ---------- NEW USER ----------
     if uid not in users:
         users[uid] = {
-            "stage": 1,
             "history": [],
+            "msg_count": 0,
             "personality": random.choice(["Sweet", "Bold"]),
-            "msg_count": 0
+            "started": True
         }
         save()
+
+        # AUTO GREETING + QUESTION
         time.sleep(random.uniform(3, 6))
-        bot.send_message(message.chat.id, random.choice([
-            "hola… 😌",
-            "mmm… hola 👀",
-            "hey…"
-        ]))
+        greeting = random.choice([
+            "hola… 😌 qué te trajo por aquí?",
+            "hey… 👀 estabas mirando o buscando algo?",
+            "mmm… hola 😏 qué te provocó escribirme?"
+        ])
+        bot.send_message(message.chat.id, greeting)
         return
 
     user = users[uid]
@@ -108,55 +102,43 @@ def chat(message):
 
     user["msg_count"] += 1
 
-    # ---------- FUNNEL LOGIC ----------
-    if user["msg_count"] < 6:
-        ai_mode = "warm"
-    elif user["msg_count"] < 11:
-        ai_mode = "build"
-    else:
-        ai_mode = "sell"
-
     # ---------- AI RESPONSE ----------
-    messages = [
-        {
-            "role": "system",
-            "content": SYSTEM_PROMPT.format(personality=user["personality"])
-        }
-    ]
+    try:
+        messages = [
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT + f"\nPersonality: {user['personality']}"
+            }
+        ]
 
-    for h in user["history"][-10:]:
-        messages.append(h)
+        for h in user["history"][-10:]:
+            messages.append(h)
 
-    if ai_mode == "sell":
-        messages.append({
-            "role": "system",
-            "content": f"""
-Now gently invite him to private access.
-First mention access for 29 MXN.
-If he hesitates, mention lifetime 39 MXN.
-Never be aggressive.
-"""
-        })
+        messages.append({"role": "user", "content": text})
 
-    messages.append({"role": "user", "content": text})
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0.9,
+            max_tokens=120
+        )
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=messages,
-        temperature=0.9,
-        max_tokens=120
-    )
+        reply = response.choices[0].message.content.strip()
 
-    reply = response.choices[0].message.content.strip()
+    except RateLimitError:
+        # 🔥 FALLBACK WHEN QUOTA EXCEEDED
+        reply = random.choice(FALLBACK_REPLIES)
+
+    except OpenAIError:
+        reply = random.choice(FALLBACK_REPLIES)
 
     # ---------- SEND ----------
     human_delay(reply)
     bot.send_message(message.chat.id, reply)
 
     if double_message():
-        extra = random.choice(["😏", "mmm…", "…", "👀"])
         time.sleep(random.uniform(1.5, 3.0))
-        bot.send_message(message.chat.id, extra)
+        bot.send_message(message.chat.id, random.choice(["😏", "mmm…", "👀"]))
 
     # ---------- SAVE ----------
     user["history"].append({"role": "user", "content": text})
