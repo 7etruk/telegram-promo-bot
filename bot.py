@@ -9,195 +9,326 @@ from openai import OpenAI, RateLimitError, OpenAIError
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN env var is missing")
+if not OPENAI_API_KEY:
+    raise RuntimeError("OPENAI_API_KEY env var is missing")
+
 bot = TeleBot(BOT_TOKEN)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 DATA_FILE = "users.json"
 
-LINK_29 = "https://buy.stripe.com/9B6eV63Sy2oscYtgR8c3m05"
-LINK_39 = "https://buy.stripe.com/4gM5kw60G0gk6A5bwOc3m04"
+LINK_29 = "https://buy.stripe.com/9B6eV63Sy2oscYtgR8c3m05"  # 29 MXN
+LINK_39 = "https://buy.stripe.com/4gM5kw60G0gk6A5bwOc3m04"  # 39 MXN lifetime
 
-MEX_CITIES = [
-    "CDMX", "Guadalajara", "Monterrey",
-    "Puebla", "Cancún", "Tijuana"
-]
-# =========================================
+MEX_CITIES = ["CDMX", "Guadalajara", "Monterrey", "Puebla", "Cancún", "Tijuana"]
 
-# ---------- DATA ----------
-if os.path.exists(DATA_FILE):
-    users = json.load(open(DATA_FILE))
-else:
-    users = {}
+# ================= STORAGE =================
+def load_users():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
 
-def save():
-    json.dump(users, open(DATA_FILE, "w"), indent=2)
+users = load_users()
 
-# ---------- HUMAN BEHAVIOR ----------
-def human_delay(text):
+def save_users():
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, ensure_ascii=False, indent=2)
+
+# ================= HUMAN-LIKE =================
+def human_delay(text: str):
     base = random.uniform(2.5, 6.0)
     extra = min(len(text) / 28, 6)
     time.sleep(base + extra)
 
-def read_and_silence():
-    return random.random() < 0.18
+def maybe_read_and_silence():
+    # "прочитала, але мовчить"
+    return random.random() < 0.16
 
-def double_message():
-    return random.random() < 0.35
+def maybe_double_message():
+    return random.random() < 0.32
 
-# ---------- BUY INTENT ----------
+def sexy_extra():
+    return random.choice(["😈", "👀", "💦", "🔥", "mmm…", "😏", "…"])
+
+# ================= AGE GATE =================
+YES_WORDS = {
+    "yes", "y", "yeah", "yep", "si", "sí", "simon", "claro", "ok", "okay",
+    "да", "так", "ага", "звісно", "okey"
+}
+NO_WORDS = {"no", "nop", "не", "ні"}
+
+def normalize(s: str) -> str:
+    return "".join(ch.lower() for ch in s.strip())
+
+def detect_age_confirm(text: str):
+    t = normalize(text)
+    # basic: "18", "18+", "tengo 18", "soy mayor", "i'm 18"
+    if "18" in t or "18+" in t:
+        return True
+    tokens = set(t.replace("¿", "").replace("?", "").replace("!", "").split())
+    if tokens & YES_WORDS:
+        return True
+    if tokens & NO_WORDS:
+        return False
+    return None
+
+# ================= BUY INTENT =================
 BUY_WORDS = [
-    "link", "acceso", "entrar", "precio", "cuánto", "cómo",
-    "quiero", "ver", "mándame", "envíame", "pay"
+    "link", "enlace", "acceso", "entrar", "precio", "cuánto", "cuanto", "cómo", "como",
+    "quiero", "ver", "mandame", "mándame", "envíame", "envia", "pásame", "pasame",
+    "where", "how", "price", "pay"
 ]
-
-HORNY_WORDS = [
-    "caliente", "mojada", "rico", "sexo", "coger",
-    "hot", "sexy", "fuck", "wet"
+HOT_WORDS = [
+    "caliente", "mojada", "rico", "sexy", "hot", "excita", "me prende", "me prendes",
+    "🔥", "💦", "😈"
 ]
+HESITATION = ["no sé", "nose", "maybe", "quizá", "quizas", "luego", "después", "after"]
 
-def buy_score(text, user):
-    t = text.lower()
+def buy_score(text: str, u: dict) -> int:
+    t = normalize(text)
     score = 0
-    if any(w in t for w in BUY_WORDS): score += 40
-    if any(w in t for w in HORNY_WORDS): score += 20
-    if user["count"] >= 5: score += 10
-    if user.get("hot"): score += 10
-    if user["count"] >= 8: score += 10
-    return score
 
-# ---------- FALLBACK ----------
-FALLBACK = [
-    "mmm… dime 😈",
-    "te leo 💦",
-    "me estás provocando 👀",
-    "no me escriben así todos…",
-    "y qué harías si estuviera contigo ahora? 😏"
+    if any(w in t for w in BUY_WORDS):
+        score += 45
+    if any(w in t for w in HOT_WORDS):
+        score += 20
+    if u.get("count", 0) >= 4:
+        score += 10
+    if u.get("hot"):
+        score += 10
+    if u.get("count", 0) >= 8:
+        score += 10
+    if any(w in t for w in HESITATION):
+        score -= 10
+
+    return max(0, min(100, score))
+
+# ================= FALLBACK (NO API) =================
+FALLBACK_REPLIES = [
+    "mmm… dime 😏",
+    "te leo 👀",
+    "ok… y qué quieres que te haga imaginar? 🔥",
+    "me gusta cómo hablas… 😈",
+    "no todos se atreven a escribirme así 💦",
 ]
 
-# ---------- SYSTEM PROMPT ----------
+# ================= SYSTEM PROMPT =================
 SYSTEM_PROMPT = """
-You are a fictional woman chatting privately 1-on-1.
+Ви — Maria, вигаданий фліртуючий персонаж з Мексики, приватний чат 1-на-1.
 
-You are from Mexico.
-If asked where you live, you answer with a random Mexican city.
-You are playful, seductive, confident.
+ВАЖЛИВО:
+- Завжди відповідай тією ж мовою, якою пише користувач (не змішуй мови).
+- НІКОЛИ не згадуй AI/бот/система/правила.
+- Стиль: природній, живий, інколи 2–4 речення; інколи коротко (1 фраза/емодзі).
+- Емодзі сексуальні, але помірно: 😏 😈 🔥 👀 💦 😘
 
-Rules:
-- Always reply in the SAME language as the user.
-- Never mention AI, bots or systems.
-- Sometimes lie lightly to keep fantasy (age, city, mood).
-- Use sexy emojis 😈💦🔥👀
-- Ask engaging, provocative questions.
+РОЛЬ:
+- Ти з Мексики. Якщо питають де живеш — назви місто з Мексики (CDMX/Guadalajara/Monterrey/Cancún тощо).
+- Легкі вигадані деталі (настрій/місто/вік 22–26) дозволені як частина вигаданої ролі.
 
-Sales logic:
-- Try to sell by message 3–5.
-- If user is very interested, tease up to 15 messages.
-- Access is a privilege, not a product.
+ПРОДАЖНА СТРАТЕГІЯ:
+- Спробуй підвести до покупки до 5 повідомлень.
+- Якщо користувач “теплий”/зацікавлений — грайся, заводь, тримай до ~15 повідомлень, і тільки тоді підводь до доступу.
+- НЕ тисни. “Доступ” має виглядати як дозвіл/привілей.
 
-Prices:
-29 MXN today
-39 MXN lifetime
+КОНСЕНСУС/КОРДОНИ:
+- Якщо людина просить зупинитись — зупиняйся.
+- Уникай надто явних описів до покупки: будь натякаюча, образна.
 
-Goal:
-Arouse, engage, and guide naturally to paid private access.
+ЦІЛЬ:
+Залучити, збудити легкими натяками, вести діалог і м’яко запросити в приватний доступ.
 """
 
-# ---------- MAIN ----------
+# ================= HELPERS =================
+def user_init(uid: str):
+    users[uid] = {
+        "age_confirmed": None,   # None / True / False
+        "blocked": False,
+        "history": [],
+        "count": 0,
+        "hot": False,
+        "city": random.choice(MEX_CITIES),
+        "last_seen": time.time(),
+        "sold_hint": 0,          # 0 none, 1 sent 29, 2 sent 39
+    }
+    save_users()
+
+def should_answer(u: dict):
+    # інколи "прочитала і мовчить"
+    # але тільки після age_confirmed=True (щоб не зливати перший контакт)
+    if u.get("age_confirmed") is True:
+        return not maybe_read_and_silence()
+    return True
+
+def build_sell_text(u: dict):
+    # продаємо 29 першим, 39 — якщо сумнівається/довго
+    if u.get("sold_hint", 0) == 0:
+        u["sold_hint"] = 1
+        return f"si quieres entrar al privado hoy… 😈\n👉 {LINK_29}"
+    else:
+        u["sold_hint"] = 2
+        return f"y si prefieres quedarte para siempre… 💦\n👉 {LINK_39}"
+
+# ================= MAIN HANDLER =================
 @bot.message_handler(func=lambda m: True)
 def chat(message):
     uid = str(message.chat.id)
-    text = message.text.strip()
+    text = (message.text or "").strip()
+    if not text:
+        return
 
-    # ---------- NEW USER ----------
     if uid not in users:
-        users[uid] = {
-            "history": [],
-            "count": 0,
-            "hot": False,
-            "city": random.choice(MEX_CITIES)
-        }
-        save()
-        time.sleep(random.uniform(3, 6))
+        user_init(uid)
+
+    u = users[uid]
+    u["last_seen"] = time.time()
+
+    if u.get("blocked"):
+        return
+
+    # 1) AGE CHECK
+    if u.get("age_confirmed") is None:
+        # перший контакт: привіт + питання + 18+
+        human_delay("hi")
         bot.send_message(
             message.chat.id,
-            random.choice([
-                "hola… 😌 qué te hizo escribirme?",
-                "hey 👀 estabas mirando o querías algo más?",
-                "mmm hola 😈 dime qué se te antoja"
-            ])
+            "hola 😏\nAntes de seguir… confirma que eres 18+ 😉"
         )
+        u["age_confirmed"] = "asked"
+        save_users()
         return
 
-    user = users[uid]
+    if u.get("age_confirmed") == "asked":
+        ans = detect_age_confirm(text)
+        if ans is True:
+            u["age_confirmed"] = True
+            save_users()
+            human_delay("ok")
+            bot.send_message(
+                message.chat.id,
+                random.choice([
+                    "bien… entonces dime 😈 ¿qué te gusta más… fotos o videos? 👀",
+                    "perfecto 😏 ¿vienes curioso o vienes con ganas? 💦",
+                    "ok… ahora sí 😈 ¿qué te trajo a escribirme?"
+                ])
+            )
+            return
+        if ans is False:
+            u["age_confirmed"] = False
+            u["blocked"] = True
+            save_users()
+            bot.send_message(message.chat.id, "Lo siento, no puedo continuar. Cuídate.")
+            return
 
-    if read_and_silence():
+        # не зрозуміло — ще раз
+        bot.send_message(message.chat.id, "Solo para estar segura… eres 18+? 😉")
         return
 
-    user["count"] += 1
-    if any(w in text.lower() for w in HORNY_WORDS):
-        user["hot"] = True
+    if u.get("age_confirmed") is not True:
+        return
 
-    score = buy_score(text, user)
+    # 2) HUMAN-LIKE SILENCE
+    if not should_answer(u):
+        save_users()
+        return
 
-    if score >= 70:
+    # 3) Update counters / hotness
+    u["count"] += 1
+    tnorm = normalize(text)
+    if any(w in tnorm for w in HOT_WORDS):
+        u["hot"] = True
+    score = buy_score(text, u)
+
+    # 4) Decide mode: sell fast by msg<=5, but keep hot user to 15
+    if score >= 75:
         mode = "sell_now"
-    elif score >= 45:
+    elif score >= 50:
         mode = "almost"
     else:
         mode = "tease"
 
+    # If user is hot, delay selling until ~15 unless they ask link/price
+    asked_buy = any(w in tnorm for w in BUY_WORDS)
+    if u["hot"] and u["count"] < 15 and not asked_buy and score < 75:
+        mode = "tease"
+
+    # If cold and we are within first 5 messages, push faster
+    if (not u["hot"]) and u["count"] <= 5 and not asked_buy:
+        mode = "almost"
+
+    # 5) Build AI response
     try:
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        for h in user["history"][-10:]:
-            messages.append(h)
-
-        if "dónde" in text.lower() or "where" in text.lower():
-            messages.append({
-                "role": "system",
-                "content": f"You live in {user['city']}, Mexico."
-            })
-
+        # pin city if asked
+        if "donde" in tnorm or "dónde" in tnorm or "where" in tnorm:
+            messages.append({"role": "system", "content": f"Tu ciudad: {u['city']} (México)."})
+        # add steering
         if mode == "sell_now":
-            messages.append({
-                "role": "system",
-                "content": "He is ready. Invite to access now."
-            })
+            messages.append({"role": "system", "content": "He is ready. Invite to access now, short and seductive."})
         elif mode == "almost":
-            messages.append({
-                "role": "system",
-                "content": "Tease once more, then invite softly."
-            })
+            messages.append({"role": "system", "content": "Tease + 1 question. If he agrees, invite to access."})
+        else:
+            messages.append({"role": "system", "content": "Keep it flirty and engaging. Ask a good question."})
+
+        for h in u["history"][-10:]:
+            messages.append(h)
 
         messages.append({"role": "user", "content": text})
 
-        response = client.chat.completions.create(
+        resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
             temperature=0.95,
-            max_tokens=160
+            max_tokens=180
         )
-
-        reply = response.choices[0].message.content.strip()
+        reply = (resp.choices[0].message.content or "").strip()
+        if not reply:
+            reply = random.choice(FALLBACK_REPLIES)
 
     except (RateLimitError, OpenAIError):
-        reply = random.choice(FALLBACK)
+        reply = random.choice(FALLBACK_REPLIES)
 
-    if mode == "sell_now":
-        reply += f"\n\n👉 {LINK_29}"
-        if random.random() < 0.4:
-            reply += f"\n\nsi quieres quedarte conmigo siempre… 😈\n👉 {LINK_39}"
+    # 6) When to drop link (smart)
+    # - immediate if sell_now or user asked
+    # - otherwise by message 3–5 unless hot and we decided to tease
+    add_link = False
+    if mode == "sell_now" or asked_buy:
+        add_link = True
+    elif (not u["hot"]) and (3 <= u["count"] <= 5):
+        add_link = True
+    elif u["hot"] and u["count"] >= 12:
+        add_link = True
 
+    if add_link:
+        # send 29 first; if already sent, sometimes upsell 39
+        sell_text = build_sell_text(u)
+        reply = f"{reply}\n\n{sell_text}"
+
+        # upsell lifetime if hesitates or already talked a lot
+        if (u["count"] >= 8 or "luego" in tnorm or "después" in tnorm) and u.get("sold_hint", 0) == 1:
+            if random.random() < 0.55:
+                reply += f"\n\n{build_sell_text(u)}"
+
+    # 7) Send message with human delay
     human_delay(reply)
     bot.send_message(message.chat.id, reply)
 
-    if double_message():
-        time.sleep(random.uniform(1.5, 3.5))
-        bot.send_message(message.chat.id, random.choice(["😈", "mmm…", "💦", "👀"]))
+    # 8) sometimes second short message
+    if maybe_double_message():
+        time.sleep(random.uniform(1.6, 3.6))
+        bot.send_message(message.chat.id, sexy_extra())
 
-    user["history"].append({"role": "user", "content": text})
-    user["history"].append({"role": "assistant", "content": reply})
-    save()
+    # 9) Save history
+    u["history"].append({"role": "user", "content": text})
+    u["history"].append({"role": "assistant", "content": reply})
+    save_users()
 
-# ---------- START ----------
+# ================= RUN =================
 print("Bot is running...")
 bot.polling(non_stop=True)
